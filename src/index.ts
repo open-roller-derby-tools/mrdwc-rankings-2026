@@ -4,6 +4,7 @@ import type {
   TeamInfo,
   TeamStanding,
   GroupStanding,
+  GroupInfo,
   RankingsResponse,
 } from './types';
 import {
@@ -13,6 +14,91 @@ import {
   sortOverallStandings,
   assignRanks,
 } from './rankings';
+import { MOCK_GROUPS, MOCK_TEAMS, MOCK_GAMES } from './mock-data';
+
+function computeRankingsResponse(
+  groups: GroupInfo[],
+  teams: TeamInfo[],
+  games: Game[],
+): RankingsResponse {
+  // Build mappings
+  const groupIdToNumber = new Map<number, number>();
+  for (const group of groups) {
+    groupIdToNumber.set(group.id, group.number);
+  }
+
+  const teamToGroupNumber = new Map<number, number | null>();
+  const teamInfoMap = new Map<number, TeamInfo>();
+
+  for (const team of teams) {
+    const groupNumber = team.group_id
+      ? (groupIdToNumber.get(team.group_id) ?? null)
+      : null;
+    teamToGroupNumber.set(team.id, groupNumber);
+    teamInfoMap.set(team.id, {
+      id: team.id,
+      name: team.name,
+      logo: team.logo,
+      flag: team.flag,
+      name_letters: team.name_letters,
+      schedule_color: team.schedule_color,
+      group_id: team.group_id,
+    });
+  }
+
+  // ── Compute Group Standings ──
+  const groupStandings: GroupStanding[] = [];
+
+  for (const group of groups) {
+    const groupGames = getGamesForGroup(group.number, games, teamToGroupNumber);
+    const groupTeamIds = teams
+      .filter((t: TeamInfo) => t.group_id === group.id)
+      .map((t: TeamInfo) => t.id);
+
+    const standings: TeamStanding[] = sortGroupStandings(
+      groupTeamIds.map((teamId: number) =>
+        computeTeamStats(teamId, groupGames, group.number, teamInfoMap),
+      ),
+      groupGames,
+    );
+
+    assignRanks(standings);
+
+    groupStandings.push({
+      group_number: group.number,
+      standings,
+    });
+  }
+
+  // ── Compute Overall Rankings ──
+  const overallStandings: TeamStanding[] = [];
+
+  for (const group of groups) {
+    const groupGames = getGamesForGroup(group.number, games, teamToGroupNumber);
+    const groupTeamIds = teams
+      .filter((t: TeamInfo) => t.group_id === group.id)
+      .map((t: TeamInfo) => t.id);
+
+    for (const teamId of groupTeamIds) {
+      overallStandings.push(
+        computeTeamStats(
+          teamId,
+          groupGames,
+          teamToGroupNumber.get(teamId) ?? null,
+          teamInfoMap,
+        ),
+      );
+    }
+  }
+
+  sortOverallStandings(overallStandings);
+  assignRanks(overallStandings);
+
+  return {
+    group_standings: groupStandings,
+    overall_rankings: overallStandings,
+  };
+}
 
 export default {
   id: 'rankings',
@@ -26,6 +112,7 @@ export default {
   ) => {
     const { ItemsService } = services;
 
+    // ── Live rankings from database ──
     router.get('/', async (req: Request, res: Response) => {
       const schema = await getSchema();
 
@@ -71,93 +158,37 @@ export default {
         }),
       ]);
 
-      // Build mappings
-      const groupIdToNumber = new Map<number, number>();
-      for (const group of groups) {
-        groupIdToNumber.set(group.id, group.number);
-      }
+      res.json(computeRankingsResponse(groups, teams, games));
+    });
 
-      const teamToGroupNumber = new Map<number, number | null>();
-      const teamInfoMap = new Map<number, TeamInfo>();
+    // ── Mock: all data (groups + teams + games + rankings) ──
+    router.get('/mock', async (req: Request, res: Response) => {
+      const rankings = computeRankingsResponse(
+        MOCK_GROUPS,
+        MOCK_TEAMS,
+        MOCK_GAMES,
+      );
+      res.json({
+        groups: MOCK_GROUPS,
+        teams: MOCK_TEAMS,
+        games: MOCK_GAMES,
+        ...rankings,
+      });
+    });
 
-      for (const team of teams) {
-        const groupNumber = team.group_id
-          ? (groupIdToNumber.get(team.group_id) ?? null)
-          : null;
-        teamToGroupNumber.set(team.id, groupNumber);
-        teamInfoMap.set(team.id, {
-          id: team.id,
-          name: team.name,
-          logo: team.logo,
-          flag: team.flag,
-          name_letters: team.name_letters,
-          schedule_color: team.schedule_color,
-          group_id: team.group_id,
-        });
-      }
+    // ── Mock: teams only ──
+    router.get('/mock/teams', async (req: Request, res: Response) => {
+      res.json(MOCK_TEAMS);
+    });
 
-      // ── Compute Group Standings ──
-      const groupStandings: GroupStanding[] = [];
+    // ── Mock: games only ──
+    router.get('/mock/games', async (req: Request, res: Response) => {
+      res.json(MOCK_GAMES);
+    });
 
-      for (const group of groups) {
-        const groupGames = getGamesForGroup(
-          group.number,
-          games,
-          teamToGroupNumber,
-        );
-        const groupTeamIds = teams
-          .filter((t: TeamInfo) => t.group_id === group.id)
-          .map((t: TeamInfo) => t.id);
-
-        const standings: TeamStanding[] = sortGroupStandings(
-          groupTeamIds.map((teamId: number) =>
-            computeTeamStats(teamId, groupGames, group.number, teamInfoMap),
-          ),
-          groupGames,
-        );
-
-        assignRanks(standings);
-
-        groupStandings.push({
-          group_number: group.number,
-          standings,
-        });
-      }
-
-      // ── Compute Overall Rankings ──
-      const overallStandings: TeamStanding[] = [];
-
-      for (const group of groups) {
-        const groupGames = getGamesForGroup(
-          group.number,
-          games,
-          teamToGroupNumber,
-        );
-        const groupTeamIds = teams
-          .filter((t: TeamInfo) => t.group_id === group.id)
-          .map((t: TeamInfo) => t.id);
-
-        for (const teamId of groupTeamIds) {
-          overallStandings.push(
-            computeTeamStats(
-              teamId,
-              groupGames,
-              teamToGroupNumber.get(teamId) ?? null,
-              teamInfoMap,
-            ),
-          );
-        }
-      }
-
-      sortOverallStandings(overallStandings);
-      assignRanks(overallStandings);
-
-      const response: RankingsResponse = {
-        group_standings: groupStandings,
-        overall_rankings: overallStandings,
-      };
-
-      res.json(response);
+    // ── Mock: computed rankings only ──
+    router.get('/mock/rankings', async (req: Request, res: Response) => {
+      res.json(computeRankingsResponse(MOCK_GROUPS, MOCK_TEAMS, MOCK_GAMES));
     });
   },
 };

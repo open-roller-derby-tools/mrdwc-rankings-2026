@@ -7,7 +7,7 @@ export default defineEndpoint({
     const { ItemsService } = services;
     const { ServiceUnavailableException } = exceptions;
 
-    router.get('/', async (_req, res) => {
+    router.get('/rankings', async (_req, res) => {
       res.json({ message: 'MRDWC Rankings 2026 endpoint is running' });
     });
   },

@@ -1,0 +1,22 @@
+{
+  "name": "mrdwc-rankings-2026",
+  "version": "1.0.0",
+  "description": "Directus endpoint extension for MRDWC Rankings 2026",
+  "type": "module",
+  "directus:extension": {
+    "type": "endpoint",
+    "path": "mrdwc-rankings-2026",
+    "source": "src/index.ts",
+    "host": "^11.0.0"
+  },
+  "scripts": {
+    "build": "directus-extension build",
+    "dev": "directus-extension build -w",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@directus/extensions-sdk": "^11.0.0",
+    "@directus/types": "^11.0.0",
+    "typescript": "^5.5.0"
+  }
+}
